@@ -9,7 +9,7 @@ source for https://www.thingiverse.com/make:442391
 - Switch and Button
 
 ## Code
-`plotall.py` contains Python code to turn the saved images into actual viewable PNGs. The rest goes on the Teensy (adjust pins to your actual configuration)
+`plotall.py` contains Python code to turn the saved images into actual viewable PNGs. The rest goes on the Teensy (adjust pins to your actual configuration). Also use [this version](https://github.com/reini1305/Adafruit_AMG88xx) of the Adafruit_AMG88xx library which returns the read pixels in fixed point uint_16 instead of float.
 
 ## Images
 ![One](https://cdn.thingiverse.com/renders/2f/ee/1b/2b/da/ce9d64afa81a46c6867406d5988186f8_preview_featured.jpg)
