@@ -87,14 +87,19 @@ uint16_t pixels[AMG_COLS * AMG_ROWS];
 #define TEXT_X            32
 #define TEXT_Y            64
 
+#define LIVE_MODE         0
+#define SD_MODE           1
+
 uint16_t dest_2d[INTERPOLATED_ROWS * INTERPOLATED_COLS];
 uint16_t boxsize;
-uint16_t fileNumber = 0; 
+uint16_t fileNumberWrite = 0;
+uint16_t fileNumberRead = 0; 
 uint16_t minTemp = 0;
 uint16_t maxTemp = 0; 
 unsigned long lastWrite = 0;
 bool buttonPressed = false;
 uint8_t colorMapId = 0;
+uint8_t mode = LIVE_MODE;
 
 uint16_t get_point(uint16_t *p, uint8_t rows, uint8_t cols, int8_t x, int8_t y);
 void interpolate_image(uint16_t *src, uint8_t src_rows, uint8_t src_cols, 
@@ -115,8 +120,9 @@ void setup() {
   // setup sd card
   SD.begin(cs_sd);
 
-  EEPROM.get(0,fileNumber);
+  EEPROM.get(0,fileNumberWrite);
   EEPROM.get(sizeof(uint16_t),colorMapId);
+  fileNumberRead = fileNumberWrite - 1;
   if(colorMapId == 0) {
     camColors = plasma;
     colorMapId = 1;
@@ -136,18 +142,35 @@ void setup() {
   
   pinMode(input,INPUT_PULLUP);
   attachInterrupt(input,handleButtonPress,FALLING);
+
+  // Check the mode (button pressed: read images from sd card)
+  if(digitalRead(input) == 0)
+    mode = SD_MODE;
 }
 
 void loop() {
   //read all the pixels
   //readPixels();
-  amg.readPixels(pixels);
-  updateMinMax();
-  interpolate_image(pixels, AMG_ROWS, AMG_COLS, dest_2d, INTERPOLATED_ROWS, INTERPOLATED_COLS);
-  drawpixels(dest_2d, INTERPOLATED_ROWS, INTERPOLATED_COLS, boxsize, boxsize);
-  if (buttonPressed) {
-    saveFile();
-    buttonPressed = false;
+  if (mode == LIVE_MODE) {
+    amg.readPixels(pixels);
+    updateMinMax();
+    interpolate_image(pixels, AMG_ROWS, AMG_COLS, dest_2d, INTERPOLATED_ROWS, INTERPOLATED_COLS);
+    drawpixels(dest_2d, INTERPOLATED_ROWS, INTERPOLATED_COLS, boxsize, boxsize);
+    if (buttonPressed) {
+      saveFile();
+      buttonPressed = false;
+    }
+  } else {
+    if (buttonPressed) {
+      loadNextFile();
+      updateMinMax();
+      interpolate_image(pixels, AMG_ROWS, AMG_COLS, dest_2d, INTERPOLATED_ROWS, INTERPOLATED_COLS);
+      drawpixels(dest_2d, INTERPOLATED_ROWS, INTERPOLATED_COLS, boxsize, boxsize);
+      char filename[10];
+      sprintf(filename,"%05d.raw",fileNumberRead + 1);
+      tft.text(filename,TEXT_X,TEXT_Y);
+      buttonPressed = false;
+    }
   }
 }
 
@@ -194,7 +217,7 @@ void saveFile(void) {
   if ((millis() - lastWrite) > 2000) {
     lastWrite = millis();
     char filename[10];
-    sprintf(filename,"%05d.raw",fileNumber);
+    sprintf(filename,"%05d.raw",fileNumberWrite);
     File myFile = SD.open(filename, FILE_WRITE);
     tft.fillRect(TEXT_X,TEXT_Y,54,8,0);
     if(myFile) {
@@ -202,14 +225,31 @@ void saveFile(void) {
       //myFile.print(42);
       myFile.flush();
       myFile.close();
-      fileNumber++;
-      EEPROM.put(0,fileNumber);
+      fileNumberWrite++;
+      EEPROM.put(0,fileNumberWrite);
       tft.text(filename,TEXT_X,TEXT_Y);
     } else {
       tft.text("!!Error!!",TEXT_X,TEXT_Y);
     }
     delay(1000);
   } 
+}
+
+void loadNextFile(void) {
+  // only allow reading images every seconds
+  if ((millis() - lastWrite) > 1000) {
+    lastWrite = millis();
+    char filename[10];
+    sprintf(filename,"%05d.raw",fileNumberRead--);
+    File myFile = SD.open(filename, FILE_READ);
+    if (myFile == 0) { // we have arrived at a file that is not on the card anymore
+      fileNumberRead = fileNumberWrite - 1;  // reset filenumber
+      sprintf(filename,"%05d.raw",fileNumberRead--);
+      myFile = SD.open(filename, FILE_READ);
+    }
+    myFile.read((uint8_t *)pixels,AMG_ROWS*AMG_COLS*sizeof(uint16_t));
+    myFile.close();
+  }
 }
 
 void drawpixels(uint16_t *p, uint8_t rows, uint8_t cols, uint8_t boxWidth, uint8_t boxHeight) {
